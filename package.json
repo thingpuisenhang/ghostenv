@@ -1,6 +1,6 @@
 {
   "name": "ghostenv",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Secure, local-first environment management system. Ghost your .env files and centralize secrets in a secure global vault.",
   "main": "index.js",
   "bin": {
@@ -13,11 +13,12 @@
     "schemas.js",
     "utils.js",
     "bin/",
-    "README.md"
+    "README.md",
+    "USAGE_GUIDE.md"
   ],
   "scripts": {
     "postinstall": "node bin/install-hook.js",
-    "test": "node simple-test.js"
+    "test": "node test/cli.test.js && node test/migration.test.js && node test/library.test.js && node test/edge-cases.test.js"
   },
   "keywords": [
     "secrets",

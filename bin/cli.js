@@ -18,6 +18,7 @@ const flags = {
   yes: rawArgs.includes('--yes') || rawArgs.includes('-y'),
   json: rawArgs.includes('--json'),
   all: rawArgs.includes('--all'),
+  global: rawArgs.includes('--global') || rawArgs.includes('-g'),
   platform: rawArgs.includes('--platform') ? rawArgs[rawArgs.indexOf('--platform') + 1] : 'legacy'
 };
 
@@ -49,7 +50,8 @@ if (rawCommand === 'id') { console.log(getLocalProjectId() || ''); process.exit(
 
 const VALID_COMMANDS = [
   'manage', 'list', 'init', 'vault', 'help', 'set', 'get', 'delete', 'exec', 
-  'platforms', 'keys', 'info', 'link', 'unlink', 'where', 'rename-key', 'delete-platform', 'docs', 'schema', 'id'
+  'platforms', 'keys', 'info', 'link', 'unlink', 'where', 'rename-key', 'delete-platform', 'docs', 'schema', 'id',
+  'destroy', 'prune', 'rename'
 ];
 
 const ALIASES = {
@@ -168,7 +170,11 @@ async function run() {
         process.exit(1);
       } else {
         const id = generateUniqueId(filteredArgs[1] || path.basename(process.cwd()));
-        fs.writeFileSync(path.join(process.cwd(), '.ghostenvrc'), JSON.stringify({ projectId: id }, null, 2));
+        const config = {
+          projectId: id,
+          note: "Multiple project IDs are not supported. Use 'genv link <id>' to switch projects."
+        };
+        fs.writeFileSync(path.join(process.cwd(), '.ghostenvrc'), JSON.stringify(config, null, 2));
         new Conf({ projectName: 'ghostenv', configName: `projects/${id}` }).set('platforms', { legacy: {} });
         console.log(pc.green(`Success: Project initialized with ID: ${id}`));
       }
@@ -186,7 +192,11 @@ async function run() {
         console.error(pc.dim('Run "genv list" to see available vaults.'));
         process.exit(1);
       }
-      fs.writeFileSync(path.join(process.cwd(), '.ghostenvrc'), JSON.stringify({ projectId: targetId }, null, 2));
+      const linkConfig = {
+        projectId: targetId,
+        note: "Multiple project IDs are not supported. Use 'genv link <id>' to switch projects."
+      };
+      fs.writeFileSync(path.join(process.cwd(), '.ghostenvrc'), JSON.stringify(linkConfig, null, 2));
       console.log(pc.green(`✔ Folder linked to vault: ${targetId}`));
       break;
 
@@ -199,6 +209,84 @@ async function run() {
         console.error(pc.red('Error: This folder is not linked to any vault.'));
         process.exit(1);
       }
+      break;
+
+    case 'destroy':
+      const dId = filteredArgs[1];
+      if (!dId) {
+        console.error(pc.red('Error: Missing Vault ID to destroy.'));
+        process.exit(1);
+      }
+      if (dId === 'global-secrets') {
+        console.error(pc.red('Error: Cannot destroy global-secrets.'));
+        process.exit(1);
+      }
+      if (!vaultExists(dId)) {
+        console.error(pc.red(`Error: Vault "${dId}" does not exist.`));
+        process.exit(1);
+      }
+      if (!flags.yes) {
+        ensureInteractive();
+        const confirm = await tui.confirm({ message: `Are you SURE you want to permanently delete vault "${dId}"?` });
+        if (!confirm || tui.isCancel(confirm)) {
+          console.log(pc.dim('Operation cancelled.'));
+          process.exit(0);
+        }
+      }
+      fs.unlinkSync(path.join(tui.PROJECTS_DIR, `${dId}.json`));
+      if (localId === dId) {
+        const rcPath = path.join(process.cwd(), '.ghostenvrc');
+        if (fs.existsSync(rcPath)) fs.unlinkSync(rcPath);
+      }
+      console.log(pc.green(`✔ Vault "${dId}" destroyed.`));
+      break;
+
+    case 'prune':
+      ensureInteractive();
+      const allFiles = fs.readdirSync(tui.PROJECTS_DIR).filter(f => f.endsWith('.json') && f !== 'global-secrets.json');
+      const vaults = allFiles.map(f => f.replace('.json', ''));
+      if (vaults.length === 0) {
+        console.log(pc.dim('No project vaults found to prune.'));
+        process.exit(0);
+      }
+      const toPrune = await tui.select({
+        message: 'Select vaults to PERMANENTLY delete:',
+        options: vaults.map(v => ({ value: v, label: v, hint: v === localId ? pc.yellow('(Current Project)') : '' })),
+        multiple: true
+      });
+      if (tui.isCancel(toPrune) || !toPrune || toPrune.length === 0) {
+        console.log(pc.dim('Nothing pruned.'));
+        process.exit(0);
+      }
+      for (const pId of toPrune) {
+        fs.unlinkSync(path.join(tui.PROJECTS_DIR, `${pId}.json`));
+        if (localId === pId) {
+          const rcPath = path.join(process.cwd(), '.ghostenvrc');
+          if (fs.existsSync(rcPath)) fs.unlinkSync(rcPath);
+        }
+      }
+      console.log(pc.green(`✔ Pruned ${toPrune.length} vaults.`));
+      break;
+
+    case 'rename':
+      const oldId = filteredArgs[1];
+      const newIdRaw = filteredArgs[2];
+      if (!oldId || !newIdRaw) {
+        console.error(pc.red('Error: Usage: genv rename <old-id> <new-id>'));
+        process.exit(1);
+      }
+      if (!vaultExists(oldId)) {
+        console.error(pc.red(`Error: Vault "${oldId}" not found.`));
+        process.exit(1);
+      }
+      const newId = generateUniqueId(newIdRaw);
+      const oldPath = path.join(tui.PROJECTS_DIR, `${oldId}.json`);
+      const newPath = path.join(tui.PROJECTS_DIR, `${newId}.json`);
+      fs.renameSync(oldPath, newPath);
+      if (localId === oldId) {
+        fs.writeFileSync(path.join(process.cwd(), '.ghostenvrc'), JSON.stringify({ projectId: newId }, null, 2));
+      }
+      console.log(pc.green(`✔ Vault renamed from "${oldId}" to "${newId}".`));
       break;
 
     case 'platforms':
@@ -242,33 +330,42 @@ async function run() {
       break;
 
     case 'set':
-      if (!localId) {
+      const targetSetId = flags.global ? 'global-secrets' : localId;
+      if (!targetSetId) {
         console.error(pc.red('Error: Folder not initialized.'));
+        console.error(pc.dim('Initialize with "genv init" or use "--global".'));
         process.exit(1);
       }
       const [sk, sv] = [filteredArgs[1], filteredArgs[2]];
       if (!sk || sv === undefined) {
         console.error(pc.red('Error: Missing arguments.'));
-        console.error(pc.dim('Usage: genv set <key> <value> [--platform <name>]'));
+        console.error(pc.dim('Usage: genv set <key> <value> [--platform <name>] [--global]'));
         process.exit(1);
       }
-      const sVault = new Conf({ projectName: 'ghostenv', configName: `projects/${localId}` });
+      const sVault = new Conf({ projectName: 'ghostenv', configName: `projects/${targetSetId}` });
       const sPlatforms = sVault.get('platforms') || {};
       if (!sPlatforms[flags.platform]) sPlatforms[flags.platform] = {};
       sPlatforms[flags.platform][sk] = sv;
       sVault.set('platforms', sPlatforms);
-      console.log(pc.green(`✔ Updated ${sk} in ${flags.platform}`));
+      console.log(pc.green(`✔ Updated ${sk} in ${flags.platform} (${flags.global ? 'global' : 'local'})`));
       break;
 
     case 'get':
       const gKey = filteredArgs[1];
       if (!gKey) {
         console.error(pc.red('Error: Missing key name.'));
-        console.error(pc.dim('Usage: genv get <key> [--platform <name>]'));
+        console.error(pc.dim('Usage: genv get <key> [--platform <name>] [--global]'));
         process.exit(1);
       }
-      const env = ghostenv();
-      const gVal = (rawArgs.includes('--platform')) ? env[flags.platform][gKey] : env[gKey];
+      let gVal;
+      if (flags.global) {
+        const gVault = new Conf({ projectName: 'ghostenv', configName: 'projects/global-secrets' }).get('platforms', {});
+        gVal = gVault[flags.platform] ? gVault[flags.platform][gKey] : undefined;
+      } else {
+        const env = ghostenv();
+        gVal = (rawArgs.includes('--platform')) ? (env[flags.platform] ? env[flags.platform][gKey] : undefined) : env[gKey];
+      }
+      
       if (flags.json) console.log(JSON.stringify({ [gKey]: gVal }));
       else {
         if (gVal === undefined) {
@@ -281,7 +378,8 @@ async function run() {
       break;
 
     case 'delete':
-      if (!localId) {
+      const targetDelId = flags.global ? 'global-secrets' : localId;
+      if (!targetDelId) {
         console.error(pc.red('Error: Folder not initialized.'));
         process.exit(1);
       }
@@ -290,7 +388,7 @@ async function run() {
         console.error(pc.red('Error: Missing key name to delete.'));
         process.exit(1);
       }
-      const dVault = new Conf({ projectName: 'ghostenv', configName: `projects/${localId}` });
+      const dVault = new Conf({ projectName: 'ghostenv', configName: `projects/${targetDelId}` });
       const dPlatforms = dVault.get('platforms') || {};
       let targetP = flags.platform;
       if (!rawArgs.includes('--platform')) {
@@ -309,7 +407,7 @@ async function run() {
       if (dPlatforms[targetP]) {
         delete dPlatforms[targetP][dKey];
         dVault.set('platforms', dPlatforms);
-        console.log(pc.green(`✔ Successfully deleted ${dKey} from ${targetP}`));
+        console.log(pc.green(`✔ Successfully deleted ${dKey} from ${targetP} (${flags.global ? 'global' : 'local'})`));
       }
       break;
 
@@ -343,28 +441,48 @@ async function run() {
 
 function extractAllSecrets() {
   const res = {};
+  const collisions = [];
   const gVault = new Conf({ projectName: 'ghostenv', configName: 'projects/global-secrets' }).get('platforms', {});
   const localId = getLocalProjectId();
   const lVault = localId ? new Conf({ projectName: 'ghostenv', configName: `projects/${localId}` }).get('platforms', {}) : {};
 
-  Object.values(gVault).forEach(d => Object.assign(res, d));
-  if (lVault.legacy) Object.assign(res, lVault.legacy);
+  // 1. Global (Lowest)
+  Object.values(gVault).forEach(d => {
+    Object.keys(d).forEach(k => {
+      res[k] = d[k];
+    });
+  });
+
+  // 2. Project Legacy
+  if (lVault.legacy) {
+    Object.keys(lVault.legacy).forEach(k => {
+      if (res[k] !== undefined && res[k] !== lVault.legacy[k]) collisions.push(k);
+      res[k] = lVault.legacy[k];
+    });
+  }
+
+  // 3. Project Platforms (Highest)
   Object.keys(lVault).sort().forEach(p => {
-    if (p !== 'legacy') Object.assign(res, lVault[p]);
+    if (p !== 'legacy') {
+      Object.keys(lVault[p]).forEach(k => {
+        if (res[k] !== undefined && res[k] !== lVault[p][k]) collisions.push(k);
+        res[k] = lVault[p][k];
+      });
+    }
   });
   
+  if (collisions.length > 0) {
+    process.stderr.write(pc.yellow(`[ghostenv] Warning: Collision detected for keys: ${[...new Set(collisions)].join(', ')}\n`));
+    process.stderr.write(pc.dim('Higher precedence values will be used.\n'));
+  }
+
   return res;
 }
 
 function showHelp() {
   console.log(`
 ${pc.bgCyan(pc.black(' GHOSTENV CLI ')) } v${pkg.version}
-
-${pc.bold('AI & AUTOMATION PROTOCOL')}
-  1. Use ${pc.bold('genv docs')} for system philosophy.
-  2. Use ${pc.bold('genv id')} for scriptable identity.
-  3. Use ${pc.bold('genv schema')} for capability discovery.
-  4. Flags (${pc.cyan('--yes')}, ${pc.cyan('--json')}) are position-agnostic.
+${pc.dim('Secure, local-first environment management system.')}
 
 ${pc.bold('CORE COMMANDS')}
   ${pc.bold('manage')} (m)     - Project Dashboard (Interactive)
@@ -373,20 +491,25 @@ ${pc.bold('CORE COMMANDS')}
   ${pc.bold('exec')} -- <cmd>  - Run command with ALL secrets injected
 
 ${pc.bold('SECRET MANIPULATION')}
-  ${pc.bold('set')} <k> <v>     - Set secret (Default platform: legacy)
+  ${pc.bold('set')} <k> <v>     - Set secret (Use --platform or --global)
   ${pc.bold('get')} <k>         - Print secret value
   ${pc.bold('keys')} [--all]    - List keys in project vault
 
-${pc.bold('ORDER OF PRECEDENCE')}
-  1. Platform Instances (Highest)
-  2. Project Legacy
-  3. Global Secrets (Lowest)
+${pc.bold('VAULT LIFECYCLE')}
+  ${pc.bold('rename')} <o> <n>  - Rename a vault ID
+  ${pc.bold('destroy')} <id>    - Permanently delete a vault
+  ${pc.bold('prune')}          - Interactive cleanup of old vaults
 
-${pc.bold('OPTIONS')}
-  ${pc.cyan('--platform <name>')} - Target instance (e.g. supabase_prod)
-  ${pc.cyan('--all')}             - Target all platforms
-  ${pc.cyan('--yes, -y')}         - Non-interactive
-  ${pc.cyan('--json')}            - JSON output
+${pc.bold('GLOBAL SECRETS')}
+  ${pc.cyan('genv set API_KEY 123 --global')}
+  ${pc.cyan('genv get API_KEY --global')}
+
+${pc.bold('AUTOMATION PROTOCOL')}
+  Use ${pc.bold('--yes')} for CI/AI and ${pc.bold('--json')} for machine output.
+
+${pc.bold('EXAMPLES')}
+  $ genv exec -- npm start
+  $ genv set DB_PASS hunter2 --platform supabase_prod
 `);
 }
 

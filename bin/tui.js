@@ -10,7 +10,8 @@ const { SCHEMAS } = require('../schemas');
 const { getLocalProjectId, generateUniqueId, vaultExists } = require('../utils');
 const { migrate } = require('../migrate');
 
-const PROJECTS_DIR = path.join(require('os').homedir(), '.config', 'ghostenv-nodejs', 'projects');
+const homedir = process.env.HOME || require('os').homedir();
+const PROJECTS_DIR = path.join(homedir, '.config', 'ghostenv-nodejs', 'projects');
 const norm = (s) => String(s).toLowerCase().replace(/[_-]/g, '');
 
 /**
@@ -260,8 +261,8 @@ async function managePlatform(projectId, platformId, vault) {
           message: `Select ${basePlatform.toUpperCase()} key:`,
           options: [...Object.keys(SCHEMAS[basePlatform]).map(k => ({ value: k, label: k })), { value: '_custom', label: 'Custom' }, { value: '_back', label: pc.dim('Cancel') }]
         });
-        if (isCancel(keyChoice) || keyChoice === '_back') continue;
-        kName = keyChoice === '_custom' ? await text({ message: 'Key name:' }) : keyChoice;
+        if (isCancel(kChoice) || kChoice === '_back') continue;
+        kName = kChoice === '_custom' ? await text({ message: 'Key name:' }) : kChoice;
       } else {
         kName = await text({ message: 'Key name:' });
       }
@@ -309,4 +310,16 @@ async function managePlatform(projectId, platformId, vault) {
 }
 
 if (require.main === module) explorer().catch(console.error);
-module.exports = { explorer, onboardLocal, manageProject };
+module.exports = { 
+  explorer, 
+  onboardLocal, 
+  manageProject, 
+  confirm, 
+  isCancel, 
+  intro, 
+  outro, 
+  select, 
+  text, 
+  note,
+  PROJECTS_DIR
+};

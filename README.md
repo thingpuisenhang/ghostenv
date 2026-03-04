@@ -41,17 +41,21 @@ Support for `--json` and `--yes` flags for all automation needs.
 - `genv init [name]`: Initialize a directory with a unique, stable ID.
 - `genv link <projectId>`: Link folder to an existing vault.
 - `genv unlink`: Remove local link (.ghostenvrc).
+- `genv rename <old> <new>`: Rename a vault ID and update local link.
+- `genv destroy <id>`: Permanently delete a specific vault.
+- `genv prune`: Interactive cleanup of all non-active vaults.
 
 #### Secret Manipulation
 - `genv platforms [id]`: List platform instances in a vault.
 - `genv keys [--all] [id]`: List keys in a specific or all platform instances.
-- `genv set <k> <v> --platform <p>`: Programmatically update a secret.
-- `genv get <k> [--platform <p>]`: Print a secret value to stdout.
-- `genv delete <k> --platform <p>`: Remove a specific secret.
+- `genv set <k> <v> [--platform <p>] [--global]`: Programmatically update a secret.
+- `genv get <k> [--platform <p>] [--global]`: Print a secret value to stdout.
+- `genv delete <k> [--platform <p>] [--global]`: Remove a specific secret.
 
 #### Automation & Execution
 - `genv vault --yes`: Silently migrate local .env files to the global vault.
 - `genv exec -- <command>`: Run any command (e.g., `npm test`) with vaulted secrets injected directly into the process environment.
+  - **Collision Detection**: `exec` automatically warns if keys clash across global/project/platform scopes.
 
 ## AI Integration Protocol
 
@@ -62,6 +66,7 @@ Ghostenv is built for seamless integration with AI agents and automation scripts
 3. **Capability Discovery**: Run `genv schema` to list supported platforms, or `genv schema <platform>` to see standard key names.
 4. **Non-Interactive Execution**: Always use the `--yes` (or `-y`) flag to bypass confirmation prompts.
 5. **Programmatic Parsing**: Use the `--json` flag to receive structured output for projects, platforms, and keys.
+6. **Global First-Class Support**: Use the `--global` (or `-g`) flag to manage shared secrets from any context.
 
 ## Usage in Code
 

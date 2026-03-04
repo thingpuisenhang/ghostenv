@@ -63,27 +63,34 @@ genv schema supabase  # List standard keys for a platform
 ```
 
 ### Auditing
-Verify which secrets are being injected into a process:
+Verify which secrets are being injected into a process and check for collisions:
 ```bash
 genv exec -- env
 ```
 
 ---
 
-## 5. Multi-Platform Management
-Standardize access across different services.
+## 5. Lifecycle Management
+Safely manage your vaults over time.
 
-- **Set Secret**: genv set KEY VAL --platform supabase
-- **List All**: genv keys --all
-- **Grouped Access**: Access via env.supabase.url in your code.
+- **Rename**: `genv rename <old-id> <new-id>` (Updates link automatically)
+- **Destroy**: `genv destroy <id>` (Permanent deletion)
+- **Prune**: `genv prune` (Interactive multi-vault cleanup)
 
 ---
 
-## 6. Security Rules
-- **Global Secrets**: Shared keys available to all projects.
+## 6. Global Secrets & Collisions
+Standardize access and prevent silent overwrites.
+
+- **Global Secrets**: `genv set API_KEY 123 --global`. Shared keys available to all projects.
+- **Collision Detection**: If a key (e.g., `PORT`) exists in both Global and Project vaults, `genv exec` will warn you and use the higher-precedence (Project) value.
+
+---
+
+## 7. Security Rules
 - **Auto-Guard**: A git pre-commit hook is installed automatically to block .env commits.
 - **Strict Isolation**: Sub-folders prioritize their own vault and cannot leak secrets to parents.
 
 ---
 Minimalist. Secure. Ghostly.
-*Version 1.0.1*
+*Version 1.0.2*

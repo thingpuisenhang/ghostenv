@@ -11,7 +11,8 @@ function getVault(projectId) {
 }
 
 function vaultExists(projectId) {
-  const PROJECTS_DIR = path.join(require('os').homedir(), '.config', 'ghostenv-nodejs', 'projects');
+  const homedir = process.env.HOME || require('os').homedir();
+  const PROJECTS_DIR = path.join(homedir, '.config', 'ghostenv-nodejs', 'projects');
   return fs.existsSync(path.join(PROJECTS_DIR, `${projectId}.json`));
 }
 
@@ -19,7 +20,18 @@ function getLocalProjectId() {
   const rcPath = path.join(process.cwd(), '.ghostenvrc');
   if (fs.existsSync(rcPath)) {
     try {
-      return JSON.parse(fs.readFileSync(rcPath, 'utf8')).projectId;
+      const raw = fs.readFileSync(rcPath, 'utf8');
+      const matches = [...raw.matchAll(/"projectId"\s*:\s*"([^"]+)"/g)];
+      
+      if (matches.length > 1) {
+        const firstId = matches[0][1];
+        process.stderr.write(`\x1b[33m[ghostenv] Warning: Multiple project IDs found in .ghostenvrc. 
+Ghostenv only supports one primary project per directory. 
+Using the first ID found: "${firstId}"\x1b[0m\n`);
+        return firstId;
+      }
+
+      return JSON.parse(raw).projectId;
     } catch (e) {
       return null;
     }

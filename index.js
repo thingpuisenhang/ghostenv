@@ -35,7 +35,7 @@ function createMultiProjectProxy(vaults) {
         
         // 1. Platform Names
         const pName = Object.keys(vault.platforms).find(p => normalize(p) === normalizedProp);
-        if (pName && pName !== 'legacy') return createPlatformProxy(vault.platforms[pName]);
+        if (pName) return createPlatformProxy(vault.platforms[pName]);
 
         // 2. Direct Keys (Legacy)
         if (vault.platforms.legacy) {
@@ -95,7 +95,8 @@ function createPlatformProxy(data) {
 
 function getVaultStore(projectId) {
   try {
-    const PROJECTS_DIR = path.join(require('os').homedir(), '.config', 'ghostenv-nodejs', 'projects');
+    const homedir = process.env.HOME || require('os').homedir();
+    const PROJECTS_DIR = path.join(homedir, '.config', 'ghostenv-nodejs', 'projects');
     const vaultPath = path.join(PROJECTS_DIR, `${projectId}.json`);
     if (!fs.existsSync(vaultPath)) return null;
     return new Conf({ projectName: 'ghostenv', configName: `projects/${projectId}` }).store;
@@ -123,13 +124,25 @@ function ghostenv(input) {
   const rcPath = path.join(process.cwd(), '.ghostenvrc');
   if (fs.existsSync(rcPath)) {
     try {
-      const rc = JSON.parse(fs.readFileSync(rcPath, 'utf8'));
-      const primary = getVaultStore(rc.projectId);
+      const raw = fs.readFileSync(rcPath, 'utf8');
+      const matches = [...raw.matchAll(/"projectId"\s*:\s*"([^"]+)"/g)];
+      
+      let pId;
+      if (matches.length > 1) {
+        pId = matches[0][1];
+        process.stderr.write(`[ghostenv] Warning: Multiple project IDs found in .ghostenvrc. Using first: "${pId}"\n`);
+      } else {
+        pId = JSON.parse(raw).projectId;
+      }
+
+      const primary = getVaultStore(pId);
       if (primary) {
         vaults.unshift(primary);
       } else {
-        process.stderr.write(`[ghostenv] Warning: Project vault "${rc.projectId}" not found.\n`);
+        process.stderr.write(`[ghostenv] Warning: Project vault "${pId}" not found.\n`);
       }
+      
+      const rc = JSON.parse(raw);
       if (Array.isArray(rc.include)) {
         rc.include.forEach(id => {
           const v = getVaultStore(id);

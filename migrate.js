@@ -48,7 +48,11 @@ async function migrate(targetDir, force = false) {
   let projectId = getLocalProjectId();
   if (!projectId) {
     projectId = generateUniqueId(path.basename(targetDir));
-    fs.writeFileSync(rcPath, JSON.stringify({ projectId }, null, 2));
+    const config = {
+      projectId,
+      note: "Multiple project IDs are not supported. Use 'genv link <id>' to switch projects."
+    };
+    fs.writeFileSync(rcPath, JSON.stringify(config, null, 2));
     if (!force) console.log(`${pc.dim('🆔 Project ID:')} ${pc.cyan(projectId)}`);
   }
 
@@ -88,11 +92,13 @@ async function migrate(targetDir, force = false) {
   vault.set('migratedAt', new Date().toISOString());
   vault.set('platforms', existingPlatforms);
 
+  const homedir = process.env.HOME || require('os').homedir();
+  const PROJECTS_DIR = path.join(homedir, '.config', 'ghostenv-nodejs', 'projects');
   const tombstone = `
 # 👻 GHOSTED BY GHOSTENV
 # ---------------------------------------------------------
 # Your secrets have been moved to your secure vault:
-# ${vault.path}
+# ${path.join(PROJECTS_DIR, `${projectId}.json`)}
 #
 # DO NOT ADD SECRETS HERE. 
 # Manage them with: genv manage
