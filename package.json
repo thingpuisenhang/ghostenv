@@ -1,6 +1,6 @@
 {
   "name": "ghostenv",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Secure, local-first environment management system. Ghost your .env files and centralize secrets in a secure global vault.",
   "main": "index.js",
   "bin": {
@@ -31,7 +31,7 @@
     "tui",
     "ghostenv"
   ],
-  "author": "Hippopotamouse",
+  "author": "thingpuisenhang",
   "license": "MIT",
   "type": "commonjs",
   "engines": {

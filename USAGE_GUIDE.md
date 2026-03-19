@@ -93,4 +93,4 @@ Standardize access and prevent silent overwrites.
 
 ---
 Minimalist. Secure. Ghostly.
-*Version 1.0.2*
+*Version 1.0.3*
